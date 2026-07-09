@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>El Corredor del Bosque - Ultimate HD</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: #0f172a; font-family: 'Arial', sans-serif; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        
+        canvas, #pantallaInicio, #pantallaNiveles, #pantallaFin {
+            box-shadow: 0 10px 30px rgba(37, 99, 235, 0.3); 
+            border: 4px solid #3b82f6;
+            border-radius: 8px; 
+            width: 700px; height: 400px;
+            max-width: 100%; max-height: 100%;
+        }
+
+        #pantallaInicio {
+            display: flex; flex-direction: column;
+            justify-content: flex-end; align-items: center; cursor: pointer; 
+            background-image: url('portada.png'); background-size: contain; background-position: center; background-repeat: no-repeat;
+            background-color: #e0f2fe; padding-bottom: 30px;
+        }
+        
+        #pantallaNiveles {
+            display: none; background: #1e293b; flex-direction: column;
+            justify-content: center; align-items: center; padding: 20px;
+        }
+        #pantallaNiveles h2, #pantallaFin h2 { color: #facc15; margin-bottom: 30px; font-size: 28px; text-shadow: 2px 2px #000; text-align: center; }
+        
+        #pantallaFin {
+            display: none; background: rgba(15, 23, 42, 0.95); flex-direction: column;
+            justify-content: center; align-items: center; padding: 20px;
+        }
+
+        .contenedorBotones { display: flex; gap: 20px; }
+        .btnNivel, .btnReiniciar {
+            padding: 15px 30px; font-size: 18px; font-weight: bold; color: white;
+            border: 3px solid white; border-radius: 12px; cursor: pointer; transition: 0.2s;
+            text-shadow: 1px 1px #000; box-shadow: 0 5px 10px rgba(0,0,0,0.3);
+        }
+        .btnFacil { background: #10b981; }   .btnFacil:hover { background: #059669; transform: scale(1.05); }
+        .btnMedio { background: #3b82f6; }   .btnMedio:hover { background: #2563eb; transform: scale(1.05); }
+        .btnDificil { background: #ef4444; } .btnDificil:hover { background: #dc2626; transform: scale(1.05); }
+        .btnReiniciar { background: #facc15; color: #1e293b; border-color: #1e293b; } .btnReiniciar:hover { transform: scale(1.05); }
+
+        .textoRetro {
+            color: #ffffff; font-size: 20px; font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8); animation: parpadeo 1s infinite;
+            background: rgba(37, 99, 235, 0.85); padding: 10px 20px; border-radius: 20px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+        @keyframes parpadeo { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+    </style>
+</head>
+<body>
+
+<div id="pantallaInicio" onclick="irASeleccionNiveles()">
+    <div class="textoRetro">PRESIONA AQUÍ PARA EMPEZAR</div>
+</div>
+
+<div id="pantallaNiveles">
+    <h2>SELECCIONA LA DIFICULTAD</h2>
+    <div class="contenedorBotones">
+        <button class="btnNivel btnFacil" onclick="configurarDificultad('facil')">FÁCIL</button>
+        <button class="btnNivel btnMedio" onclick="configurarDificultad('medio')">MEDIO</button>
+        <button class="btnNivel btnDificil" onclick="configurarDificultad('dificil')">DIFÍCIL</button>
+    </div>
+</div>
+
+<div id="pantallaFin">
+    <h2 id="textoFin">FIN DEL JUEGO</h2>
+    <button class="btnReiniciar" onclick="reiniciarTodoElJuego()">VOLVER A JUGAR</button>
+</div>
+
+<canvas id="gameCanvas" style="display: none;"></canvas>
+
+<audio id="musicaFondo" loop></audio>
+<audio id="sndSaltar" src="saltar.mp3"></audio>
+<audio id="sndComer" src="comer.mp3"></audio>
+<audio id="sndLlorar" src="llorar.mp3"></audio>
+
+<script>
+let juegoIniciado = false;
+let estadoJuego = "menu"; 
+let nombreUsuario = "Jugador";
+let dificultadActual = "medio";
+
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+canvas.width = 700;
+canvas.height = 400;
+
+ctx.imageSmoothingEnabled = true;
+ctx.imageSmoothingQuality = 'high';
+
+const audio = {
+    musica: document.getElementById("musicaFondo"),
+    saltar: document.getElementById("sndSaltar"),
+    comer: document.getElementById("sndComer"),
+    llorar: document.getElementById("sndLlorar")
+};
+
+function cambiarYReproducirMusica(ruta, loopState = true) {
+    audio.musica.pause();
+    audio.musica.src = ruta;
+    audio.musica.loop = loopState;
+    audio.musica.currentTime = 0;
+    audio.musica.play().catch(e => console.log("Audio en espera", e));
+}
+
+function reproducirSonido(efecto) {
+    if (efecto) { efecto.currentTime = 0; efecto.play().catch(e => {}); }
+}
+
+const imgs = {
+    fondo: new Image(), premio: new Image(), obstaculo: new Image(),
+    pAdelante1: new Image(), pAdelante2: new Image(),
+    pAtras1: new Image(), pAtras2: new Image(),
+    pSalto: new Image(), pAgachado: new Image(), pLlorando: new Image(),
+    vEspera: new Image(), vLanza: new Image(), vOculto: new Image()
+};
+
+imgs.fondo.src = "fondo.png"; imgs.premio.src = "premio.png"; imgs.obstaculo.src = "obstaculo.png";
+imgs.pAdelante1.src = "personaje_adelante1.png"; imgs.pAdelante2.src = "personaje_adelante2.png";
+imgs.pAtras1.src = "personaje_atras1.png"; imgs.pAtras2.src = "personaje_atras2.png";
+imgs.pSalto.src = "personaje_salto.png"; imgs.pAgachado.src = "personaje_agachado.png"; imgs.pLlorando.src = "personaje_llorando.png";
+imgs.vEspera.src = "villano_espera.png"; imgs.vLanza.src = "villano_lanza.png"; imgs.vOculto.src = "villano_oculto.png";
+
+let tiempoContador = 0; let fotogramaCiclo = 0; let fondoX = 0;
+let velocidadJuego = 5; let puntuacion = 0;
+let tiempoRestante = 60; 
+let ultimoTiempoCheck = 0;
+let tiempoTranscurridoText = "00:00"; 
+let teclas = {}; let touchAgachado = false;
+
+let aceleracionPremio = 0.4;
+let velocidadObstaculoExtra = 2.5;
+let tiempoEsperaPremio = 0; 
+let retrasoPremioNivel = 0; 
+
+const SUELO_Y = 320;
+const OBJETIVO_PREMIOS = 20; 
+
+let jugador = {
+    x: 80, y: SUELO_Y - 80, ancho: 70, alto: 80,
+    velocidadX: 6, velocidadY: 0, gravedad: 0.6, fuerzaSalto: -13,
+    enElSuelo: true, agachado: false, estado: "corriendo_adelante"
+};
+
+let villano = {
+    x: canvas.width - 100, y: 40, ancho: 80, alto: 90,
+    direccionY: 1, velocidadY: 2.2, estado: "oculto", timerEstado: 120
+};
+
+let premio = { x: 0, y: 0, ancho: 45, alto: 45, activo: false };
+let obstaculo = { x: 0, y: 0, ancho: 45, alto: 45, activo: false };
+
+function irASeleccionNiveles() {
+    document.getElementById("pantallaInicio").style.display = "none";
+    document.getElementById("pantallaNiveles").style.display = "flex";
+}
+
+function configurarDificultad(nivel) {
+    nombreUsuario = prompt("Por favor, ingresa el nombre del jugador:", "Hijo/a") || "Jugador";
+    dificultadActual = nivel;
+    
+    if (nivel === 'facil') {
+        velocidadJuego = 4.0;
+        villano.velocidadY = 1.2;
+        velocidadObstaculoExtra = 1.5;
+        aceleracionPremio = 0.2;
+        tiempoRestante = 90;
+        retrasoPremioNivel = 10;
+        cambiarYReproducirMusica("musica_facil.mp3");
+    } else if (nivel === 'medio') {
+        velocidadJuego = 5.5;
+        villano.velocidadY = 2.2;
+        velocidadObstaculoExtra = 2.5;
+        aceleracionPremio = 0.4;
+        tiempoRestante = 60;
+        retrasoPremioNivel = 120;
+        cambiarYReproducirMusica("musica_medio.mp3");
+    } else if (nivel === 'dificil') {
+        velocidadJuego = 7.5;
+        villano.velocidadY = 3.8;
+        velocidadObstaculoExtra = 4.0;
+        aceleracionPremio = 0.6;
+        tiempoRestante = 45;
+        retrasoPremioNivel = 300;
+        cambiarYReproducirMusica("musica_dificil.mp3");
+    }
+
+    iniciarJuegoCompleto();
+}
+
+function iniciarJuegoCompleto() {
+    document.getElementById("pantallaNiveles").style.display = "none";
+    canvas.style.display = "block";
+    
+    ultimoTiempoCheck = Date.now();
+    juegoIniciado = true;
+    estadoJuego = "jugando";
+    
+    tiempoEsperaPremio = 0;
+    reiniciarPremio();
+    juego();
+}
+
+window.addEventListener("keydown", (e) => { 
+    teclas[e.key] = true; 
+    if(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) e.preventDefault(); 
+});
+window.addEventListener("keyup", (e) => { teclas[e.key] = false; });
+
+canvas.addEventListener("touchstart", (e) => {
+    let rect = canvas.getBoundingClientRect();
+    let touchX = e.touches[0].clientX - rect.left;
+    let touchY = e.touches[0].clientY - rect.top;
+    if (touchY < canvas.height / 2) {
+        if (jugador.enElSuelo && jugador.estado !== "llorando" && estadoJuego === "jugando") {
+            jugador.velocidadY = jugador.fuerzaSalto; jugador.enElSuelo = false;
+            reproducirSonido(audio.saltar);
+        }
+    } else {
+        if (touchX < canvas.width / 3) teclas["ArrowLeft"] = true;
+        else if (touchX > (canvas.width / 3) * 2) teclas["ArrowRight"] = true;
+        else touchAgachado = true;
+    }
+}, { passive: true });
+
+canvas.addEventListener("touchend", () => { teclas["ArrowLeft"] = false; teclas["ArrowRight"] = false; touchAgachado = false; });
+
+function reiniciarPremio() {
+    premio.activo = false;
+    if (tiempoEsperaPremio <= 0) {
+        premio.x = canvas.width / 2 + Math.random() * (canvas.width / 3);
+        premio.y = SUELO_Y - 60 - Math.random() * 80;
+        premio.activo = true;
+    }
+}
+
+function lanzarObstaculo() {
+    obstaculo.x = villano.x; obstaculo.y = villano.y + 30;
+    if (villano.estado === "oculto" || villano.y > SUELO_Y - 120) {
+        obstaculo.targetY = SUELO_Y - 45;
+    } else {
+        obstaculo.targetY = Math.random() > 0.5 ? SUELO_Y - 45 : SUELO_Y - 85;
+    }
+    obstaculo.activo = true;
+}
+
+function finalizarJuego(resultado) {
+    estadoJuego = "fin";
+    canvas.style.display = "none";
+    document.getElementById("pantallaFin").style.display = "flex";
+    
+    const textoFin = document.getElementById("textoFin");
+    if (resultado === "victoria") {
+        textoFin.innerHTML = `¡FELICITACIONES ${nombreUsuario.toUpperCase()}!<br>👑 ¡GANASTE EL JUEGO! 👑`;
+        textoFin.style.color = "#10b981";
+        cambiarYReproducirMusica("musica_festejo.mp3", false);
+    } else {
+        textoFin.style.color = "#ef4444";
+        cambiarYReproducirMusica("musica_gameover.mp3", false);
+        
+        if (resultado === "tiempo") {
+            textoFin.innerHTML = `¡SE ACABÓ EL TIEMPO!<br>⏱️ Te faltaron premios. Intentá de nuevo.`;
+        } else if (resultado === "derrota") {
+            textoFin.innerHTML = `¡GAME OVER!<br>😭 Tus premios bajaron de 0. ¡El villano ganó!`;
+        }
+    }
+}
+
+function reiniciarTodoElJuego() {
+    puntuacion = 0;
+    juegoIniciado = false;
+    jugador.x = 80; jugador.y = SUELO_Y - 80; jugador.velocidadY = 0; jugador.enElSuelo = true; jugador.estado = "corriendo_adelante";
+    villano.estado = "oculto"; villano.timerEstado = 120; villano.y = 40;
+    obstaculo.activo = false; premio.activo = false;
+    
+    document.getElementById("pantallaFin").style.display = "none";
+    document.getElementById("pantallaNiveles").style.display = "flex";
+}
+
+function actualizar() {
+    if (estadoJuego !== "jugando") return;
+
+    let ahora = Date.now();
+    if (ahora - ultimoTiempoCheck >= 1000) {
+        tiempoRestante--;
+        ultimoTiempoCheck = ahora;
+        if (tiempoRestante <= 0) { finalizarJuego("tiempo"); return; }
+    }
+    
+    let mins = Math.floor(tiempoRestante / 60).toString().padStart(2, '0');
+    let segs = (tiempoRestante % 60).toString().padStart(2, '0');
+    tiempoTranscurridoText = `${mins}:${segs}`;
+
+    if (tiempoEsperaPremio > 0) {
+        tiempoEsperaPremio--;
+        if (tiempoEsperaPremio <= 0 && !premio.activo) { reiniciarPremio(); }
+    }
+
+    fondoX -= velocidadJuego * 0.5; if (fondoX <= -canvas.width) fondoX = 0;
+
+    villano.timerEstado--;
+    if (villano.timerEstado <= 0) {
+        if (villano.estado === "oculto") {
+            if (Math.random() > 0.4) lanzarObstaculo();
+            villano.estado = "espera"; villano.timerEstado = 60 + Math.random() * 60;
+        } else if (villano.estado === "espera") {
+            villano.estado = "lanza"; lanzarObstaculo(); villano.timerEstado = 30;
+        } else if (villano.estado === "lanza") {
+            villano.estado = "oculto"; villano.timerEstado = 80 + Math.random() * 100;
+        }
+    }
+
+    if (villano.estado === "oculto") {
+        villano.y = SUELO_Y - villano.alto;
+    } else {
+        villano.y += villano.velocidadY * villano.direccionY;
+        if (villano.y > SUELO_Y - villano.alto || villano.y < 15) villano.direccionY *= -1;
+    }
+
+    if (jugador.estado === "llorando") {
+        jugador.velocidadY += jugador.gravedad; jugador.y += jugador.velocidadY;
+        if (jugador.y >= SUELO_Y - jugador.alto) { jugador.y = SUELO_Y - jugador.alto; jugador.velocidadY = 0; }
+        tiempoContador++; if (tiempoContador > 45) { jugador.estado = "corriendo_adelante"; tiempoContador = 0; }
+    } else {
+        if (teclas["ArrowRight"] && jugador.x < canvas.width - jugador.ancho - 130) {
+            jugador.x += jugador.velocidadX; jugador.estado = "corriendo_adelante";
+        } else if (teclas["ArrowLeft"] && jugador.x > 20) {
+            jugador.x -= jugador.velocidadX; jugador.estado = "corriendo_atras";
+        } else {
+            jugador.estado = "corriendo_adelante";
+        }
+
+        if (teclas["ArrowUp"] && jugador.enElSuelo) {
+            jugador.velocidadY = jugador.fuerzaSalto; jugador.enElSuelo = false;
+            reproducirSonido(audio.saltar);
+        }
+        
+        jugador.velocidadY += jugador.gravedad; jugador.y += jugador.velocidadY;
+
+        if (teclas["ArrowDown"] || touchAgachado) {
+            jugador.agachado = true; jugador.estado = "agachado"; jugador.alto = 45;
+        } else {
+            jugador.agachado = false; jugador.alto = 80;
+        }
+
+        if (!jugador.enElSuelo) { jugador.estado = "saltando"; }
+
+        let limiteSuelo = SUELO_Y - jugador.alto;
+        if (jugador.y >= limiteSuelo) { jugador.y = limiteSuelo; jugador.velocidadY = 0; jugador.enElSuelo = true; }
+
+        if (jugador.enElSuelo && !jugador.agachado) {
+            tiempoContador++; if (tiempoContador % 8 === 0) fotogramaCiclo = (fotogramaCiclo === 0) ? 1 : 0;
+        }
+    }
+
+    if (premio.activo) {
+        premio.x -= velocidadJuego;
+        if (premio.x < -premio.ancho) reiniciarPremio();
+    }
+
+    if (obstaculo.activo) {
+        obstaculo.x -= (velocidadJuego + velocidadObstaculoExtra);
+        if (obstaculo.y < obstaculo.targetY) obstaculo.y += 5;
+        else if (obstaculo.y > obstaculo.targetY) obstaculo.y -= 5;
+        if (obstaculo.x < -obstaculo.ancho) obstaculo.activo = false;
+    }
+
+    if (premio.activo && jugador.x < premio.x + premio.ancho && jugador.x + jugador.ancho > premio.x &&
+        jugador.y < premio.y + premio.alto && jugador.y + jugador.alto > premio.y) {
+        
+        puntuacion++; 
+        velocidadJuego += aceleracionPremio; 
+        premio.activo = false;
+        reproducirSonido(audio.comer); 
+        
+        if (puntuacion >= OBJETIVO_PREMIOS) { finalizarJuego("victoria"); return; }
+        
+        tiempoEsperaPremio = retrasoPremioNivel; 
+        reiniciarPremio();
+    }
+
+    if (obstaculo.activo && jugador.x < obstaculo.x + obstaculo.ancho && jugador.x + jugador.ancho > obstaculo.x &&
+        jugador.y < obstaculo.y + obstaculo.alto && jugador.y + jugador.alto > obstaculo.y) {
+        
+        puntuacion--; 
+        obstaculo.activo = false;
+        reproducirSonido(audio.llorar);
+        
+        if (puntuacion < 0) { finalizarJuego("derrota"); return; }
+
+        jugador.estado = "llorando"; tiempoContador = 0;
+        velocidadJuego = Math.max(4, velocidadJuego - 2.0); 
+    }
+}
+
+function dibujar() {
+    if (estadoJuego !== "jugando") return;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.drawImage(imgs.fondo, fondoX, 0, canvas.width, canvas.height);
+    ctx.drawImage(imgs.fondo, fondoX + canvas.width, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = "rgba(40, 30, 20, 0.1)";
+    ctx.fillRect(0, SUELO_Y, canvas.width, canvas.height - SUELO_Y);
+
+    let imgVillano = imgs.vOculto;
+    if (villano.estado === "espera") imgVillano = imgs.vEspera;
+    if (villano.estado === "lanza") imgVillano = imgs.vLanza;
+    ctx.drawImage(imgVillano, villano.x, villano.y, villano.ancho, villano.alto);
+
+    let imgJugador = imgs.pAdelante1;
+    switch(jugador.estado) {
+        case "saltando": imgJugador = imgs.pSalto; break;
+        case "agachado": imgJugador = imgs.pAgachado; break;
+        case "llorando": imgJugador = imgs.pLlorando; break;
+        case "corriendo_atras": imgJugador = (fotogramaCiclo === 0) ? imgs.pAtras1 : imgs.pAtras2; break;
+        case "corriendo_adelante": imgJugador = (fotogramaCiclo === 0) ? imgs.pAdelante1 : imgs.pAdelante2; break;
+    }
+    ctx.drawImage(imgJugador, jugador.x, jugador.y, jugador.ancho, jugador.alto);
+
+    if (premio.activo) ctx.drawImage(imgs.premio, premio.x, premio.y, premio.ancho, premio.alto);
+    if (obstaculo.activo) ctx.drawImage(imgs.obstaculo, obstaculo.x, obstaculo.y, obstaculo.ancho, obstaculo.alto);
+
+    // --- INTERFAZ GRÁFICA HD FIJADA Y CORREGIDA ---
+    ctx.fillStyle = "white"; ctx.strokeStyle = "black"; ctx.lineWidth = 4; ctx.font = "bold 18px Arial";
+    
+    // 1. Panel Izquierdo: Premios
+    ctx.textAlign = "left"; 
+    ctx.strokeText(`Premios: ${puntuacion}/${OBJETIVO_PREMIOS}`, 25, 40); ctx.fillText(`Premios: ${puntuacion}/${OBJETIVO_PREMIOS}`, 25, 40);
+    
+    // 2. Panel Derecho: Jugador
+    ctx.textAlign = "right"; 
+    ctx.strokeText(`Jugador: ${nombreUsuario}`, canvas.width - 25, 40); ctx.fillText(`Jugador: ${nombreUsuario}`, canvas.width - 25, 40);
+
+    // 3. Panel Central: Reloj Digital (Diseño limpio sin manchas tipográficas)
+    ctx.textAlign = "center";
+    ctx.strokeText(`Tiempo: ${tiempoTranscurridoText}`, canvas.width / 2, 40);
+    ctx.fillText(`Tiempo: ${tiempoTranscurridoText}`, canvas.width / 2, 40);
+}
+
+function juego() { 
+    actualizar(); 
+    dibujar(); 
+    if (estadoJuego === "jugando") { requestAnimationFrame(juego); }
+}
+</script>
+</body>
+</html>
